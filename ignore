@@ -1,0 +1,100 @@
+!pip install opencv-python
+!pip install playsound
+!pip install ultralytics
+
+#코드
+import cv2
+import numpy as np
+from playsound import playsound
+
+from ultralytics import YOLO
+
+model = YOLO("yolov5n.pt")
+
+frame = cv2.imread("input.jpeg")
+
+# 경고음 재생 함수
+def play_warning_sound():
+    playsound("warning_sound.mp3")  # 경고음 파일 경로
+
+# 위험 거리 기준 (픽셀 단위로 설정)
+DANGER_DISTANCE = 150
+
+# 객체 감지 및 거리 계산
+def detect_and_warn(frame):
+
+    # 카메라에서 읽은 프레임의 높이와 너비를 가져온다.
+    # 감지된 객체의 상대적인 위치 값을 실제 픽셀 좌표로 변환할 때 필요.
+    height, width = frame.shape[:2]
+
+    # YOLO 모델은 특정 크기의 정규화된 입력을 요구. 이 함수는 해당 전처리를 수행.
+    blob = cv2.dnn.blobFromImage(frame, 1/255.0, (640, 640), swapRB=True, crop=False)
+
+    yolo.setInput(blob)
+    outputs = yolo.forward()
+
+    detections = []  # 감지된 객체 저장.
+
+    # YOLO 모델의 출력인 outputs는 감지된 모든 객체의 정보를 포함한 다차원 배열.
+    # outputs[0,0]의 의미: YOLO 모델의 출력 데이터에서 첫 번째 배치의 첫 번째 객체 정보를 가져오는 것.
+    for detection in outputs[0, 0]:
+
+        confidence = detection[2] # 신뢰도
+
+        if confidence > 0.5:  # 신뢰도 기준
+
+            # 위치 정보는 상대 좌표로 제공. 상대 좌표를 실제 픽셀 좌표로 변환하기 위해 이미지의 크기를 곱한다.
+            x, y, w, h = detection[3:7] * np.array([width, height, width, height])
+
+            # detection[1]: 감지된 객체의 클래스 ID.
+            # 클래스 ID는 YOLO 모델에 따라 사전에 정의된 클래스 목록이 있다.
+            class_id = int(detection[1])
+
+            # 필터링된 객체의 정보를 detections 리스트에 저장.
+            detections.append((class_id, x, y, w, h))
+
+    # 거리 계산 및 경고
+    # 이중 루프를 사용하여 모든 객체 쌍(obj1, obj2)에 대해 비교를 수행.
+    for obj1 in detections:
+        for obj2 in detections:
+
+            # 사람(0)과 자동차(2) 간 거리 계산(수정 - 다른 클래스 간 거리 계산)
+            dist = np.sqrt((obj1[1] - obj2[1])**2 + (obj1[2] - obj2[2])**2)
+
+            if dist < DANGER_DISTANCE:
+                play_warning_sound()
+                cv2.putText(frame, "WARNING!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+    return frame
+
+# 비디오 스트림 처리
+cap = cv2.VideoCapture("input.mp4")
+
+# 카메라 스트림이 열려 있는 동안 계속 루프를 실행. 카메라 또는 파일 스트림이 성공적으로 열렸는지를 확인하는 함수.
+while cap.isOpened():
+
+    # 하나의 프레임을 읽어온다. 읽기 성공 여부(불린 값), 현재 읽어온 이미지(프레임)
+    ret, frame = cap.read()
+
+    # 읽기 실패
+    if not ret:
+        break
+
+    # 읽어온 프레임에 함수 적용.
+    processed_frame = detect_and_warn(frame)
+
+    # 처리된 프레임을 화면에 표시. 창 이름.
+    cv2.imshow("Safety Monitor", processed_frame)
+
+    # q 키를 누르면 입력 종료.
+    # cv2.waitKey(1): 1ms 동안 키 입력 대기, 지정한 시간 동안 프로그램의 실행을 잠시 멈춤.
+    # 누른 키의 아스키 코드 값 반환. 아무 키도 입력하지 않으면 -1 반환.
+    # & 0xFF: 반환된 값에서 하위 8비트만 가져온다.
+    # ord("q"): q의 아스키 코드값 반환.
+    if cv2.waitKey(1) & 0xFF == ord("q"):
+        break
+
+# 사용 중인 카메라 또는 파일 스트림을 해제.
+cap.release()
+
+# OpenCV에서 생성한 모든 창을 닫는다. cv2.imshow로 생성된 창을 제거하여 프로그램 종료 시 화면에 남지 않도록 한다.
+cv2.destroyAllWindows()
